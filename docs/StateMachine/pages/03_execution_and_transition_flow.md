@@ -15,18 +15,18 @@ Stateは「遷移したい」と要求し、StateMachineが遷移を実行しま
 ~~~mermaid
 sequenceDiagram
     participant Godot
-    participant Actor
+    participant ActorNode as Actor
     participant Machine as StateMachine
     participant Idle
 
-    Godot->>Actor: _ready()
-    Actor->>Machine: initialize(actor, dependencies)
+    Godot->>ActorNode: _ready()
+    ActorNode->>Machine: initialize(actor, dependencies)
     Machine->>Idle: setup(actor, dependencies)
     Note over Machine: 全Stateをsetupし<br/>遷移シグナルを接続
     Machine->>Machine: _change_state(initial_state)
     Machine->>Machine: active_state = Idle
     Machine->>Idle: enter(null, {})
-    Machine-->>Actor: 初期化完了
+    Machine-->>ActorNode: 初期化完了
 ~~~
 
 初期Stateにも通常の遷移関数を使用します。これにより、ゲーム開始時だけenterが呼ばれない、ログに初期Stateが残らない、といった特別扱いを避けられます。
