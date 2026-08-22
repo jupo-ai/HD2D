@@ -1,19 +1,19 @@
-# 06. Idle・Walk・RunとPlayer本体
+# 05. Idle・Walk・RunとPlayer本体
 
-[前章：衣服とVisual](05_outfit_and_visual.md) ｜ [目次へ](../README.md) ｜ [次章：拡張・NPC化・テスト](07_extensions_npc_and_tests.md)
+[前章：カメラ基準のFacingと方向別アニメーション](04_camera_relative_facing.md) ｜ [目次へ](../README.md) ｜ [次章：拡張・NPC化・テスト](06_extensions_npc_and_tests.md)
 
 ## この章で接続するもの
 
-ここまでに作ったIntent、Motor、Facing、Visualを、共有ロコモーションStateとPlayer本体から接続します。
+ここまでに作ったIntent、Motor、Facing、DirectionalSpriteAnimatorを、共有ロコモーションStateとPlayer本体から接続します。
 
 ~~~text
 PlayerMovementIntent ─┐
 CharacterMotor3D     ─┼─> LocomotionStateMachine ─> Idle / Walk / Run
 Facing               ─┤
-Visual               ─┘
+DirectionalAnimator  ─┘
 ~~~
 
-StateはPlayer専用にせず、`LocomotionState`という共有基底クラスを使います。
+StateはPlayer専用にせず、`LocomotionState`という共有基底クラスを使用します。
 
 ## 1. LocomotionStateを作る
 
@@ -33,7 +33,7 @@ var body: CharacterBody3D
 var movement_intent: MovementIntentSource
 var motor: CharacterMotor3D
 var facing: CameraRelativeFacing3D
-var visual: CharacterVisual3D
+var animator: DirectionalSpriteAnimator3D
 
 
 func setup(
@@ -52,9 +52,9 @@ func setup(
     facing = injected_dependencies.get(
         &"facing"
     ) as CameraRelativeFacing3D
-    visual = injected_dependencies.get(
-        &"visual"
-    ) as CharacterVisual3D
+    animator = injected_dependencies.get(
+        &"animator"
+    ) as DirectionalSpriteAnimator3D
 
     assert(body != null, "CharacterBody3Dが必要です")
     assert(
@@ -63,14 +63,17 @@ func setup(
     )
     assert(motor != null, "CharacterMotor3Dが必要です")
     assert(facing != null, "CameraRelativeFacing3Dが必要です")
-    assert(visual != null, "CharacterVisual3Dが必要です")
+    assert(
+        animator != null,
+        "DirectionalSpriteAnimator3Dが必要です"
+    )
 
 
 func enter(
     _previous_state: State,
     _data: Dictionary = {}
 ) -> void:
-    visual.set_locomotion(logical_animation)
+    animator.set_logical_animation(logical_animation)
 
 
 func get_move_vector_world() -> Vector3:
@@ -95,7 +98,7 @@ func command_motion(
     motor.command_move(move_vector_world, max_speed)
 ~~~
 
-具体StateはInput、Camera3D、AnimatedSprite3D、SpriteFramesを直接参照しません。
+具体StateはInput、Camera3D、AnimatedSprite3D、SpriteFramesを直接参照しません。SpriteFramesはAnimatedSprite3Dへ設定済みの1つだけを使用します。
 
 ## 2. IdleStateを作る
 
@@ -226,8 +229,8 @@ extends CharacterBody3D
 @onready var facing: CameraRelativeFacing3D = (
     $CameraRelativeFacing3D as CameraRelativeFacing3D
 )
-@onready var visual: CharacterVisual3D = (
-    $CharacterVisual3D as CharacterVisual3D
+@onready var directional_animator: DirectionalSpriteAnimator3D = (
+    $DirectionalSpriteAnimator3D as DirectionalSpriteAnimator3D
 )
 @onready var locomotion: StateMachine = (
     $LocomotionStateMachine as StateMachine
@@ -235,7 +238,7 @@ extends CharacterBody3D
 
 
 func _ready() -> void:
-    visual.initialize()
+    directional_animator.initialize()
 
     locomotion.initialize(
         self,
@@ -243,7 +246,7 @@ func _ready() -> void:
             &"movement_intent": movement_intent,
             &"motor": motor,
             &"facing": facing,
-            &"visual": visual,
+            &"animator": directional_animator,
         }
     )
 
@@ -254,25 +257,17 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
     locomotion.update(delta)
-    visual.refresh()
+    directional_animator.refresh()
 
 
 func _physics_process(delta: float) -> void:
     locomotion.physics_update(delta)
     motor.physics_step(delta)
-
-
-func set_outfit(outfit_id: StringName) -> bool:
-    return visual.set_outfit(outfit_id)
-
-
-func get_outfit_id() -> StringName:
-    return visual.get_outfit_id()
 ~~~
 
 ### 初期化順
 
-Visualを先に初期化し、その後にStateMachineを初期化します。StateMachineの初期StateであるIdleの`enter()`がVisualへ`idle`を要求するとき、SpriteFramesとFacingがすでに利用可能である必要があるためです。
+DirectionalSpriteAnimatorを先に初期化し、その後にStateMachineを初期化します。StateMachineの初期StateであるIdleの`enter()`がAnimatorへ`idle`を要求するとき、AnimatedSprite3Dの単一SpriteFramesとFacingがすでに利用可能である必要があるためです。
 
 ## 6. Inspectorを設定する
 
@@ -307,7 +302,7 @@ Visualを先に初期化し、その後にStateMachineを初期化します。St
 | walk_state | Walk |
 | run_speed | 5.0 |
 
-速度はアートのフレームレートではなく、ワールド単位の移動速度として調整します。Visual側のFPSは足滑りを見ながら別に調整できます。
+速度はアートのフレームレートではなく、ワールド単位の移動速度として調整します。SpriteFrames側のFPSは足滑りを見ながら別に調整できます。
 
 ## 7. 実行時の命令順
 
@@ -322,7 +317,7 @@ sequenceDiagram
     participant RunStateNode as Run
     participant FacingNode as Facing
     participant MotorNode as Motor
-    participant VisualNode as Visual
+    participant AnimatorNode as DirectionalAnimator
 
     GodotEngine->>PlayerNode: _physics_process(delta)
     PlayerNode->>MachineNode: physics_update(delta)
@@ -332,7 +327,7 @@ sequenceDiagram
     WalkStateNode->>MachineNode: transition_requested(Walk, Run)
     MachineNode->>WalkStateNode: exit(Run)
     MachineNode->>RunStateNode: enter(Walk, data)
-    RunStateNode->>VisualNode: set_locomotion(run)
+    RunStateNode->>AnimatorNode: set_logical_animation(run)
     WalkStateNode-->>MachineNode: return
     MachineNode-->>PlayerNode: return
     PlayerNode->>MotorNode: physics_step(delta)
@@ -341,17 +336,7 @@ sequenceDiagram
 
 `request_transition()`後に旧Stateの処理を続けないため、各遷移要求の直後に`return`しています。
 
-## 8. 衣服変更の入口
-
-外部NodeはAnimatedSprite3Dへ直接触れず、Playerの公開メソッドを呼びます。
-
-~~~gdscript
-player.set_outfit(&"indoor")
-~~~
-
-将来セーブデータへ保存する値は`SpriteFrames`自体ではなく、`outdoor`などの安定したIDにします。ロード時にCharacterVisual3DがIDからResourceを解決します。
-
-## 9. 最初の動作確認
+## 8. 最初の動作確認
 
 1. currentなCamera3Dを持つテストMapへPlayerを配置する。
 2. 起動直後のactive_stateがIdleであることを確認する。
@@ -359,9 +344,9 @@ player.set_outfit(&"indoor")
 4. runを押してRunへ遷移し、速度とアニメーションが変わることを確認する。
 5. 入力を離し、Idleへ戻って減速することを確認する。
 6. Idle中にCamera3Dを回転し、`idle_*`が切り替わることを確認する。
-7. Walk中にOutdoorからIndoorへ変更し、歩行周期が維持されることを確認する。
+7. AnimatedSprite3DのSpriteFramesが実行中に変化しないことを確認する。
 8. `move_and_slide()`がMotorから1物理フレームに1回だけ呼ばれることを確認する。
 
 ---
 
-[前章：衣服とVisual](05_outfit_and_visual.md) ｜ [目次へ](../README.md) ｜ **次のページ:** [07. 拡張・NPC化・テスト](07_extensions_npc_and_tests.md)
+[前章：カメラ基準のFacingと方向別アニメーション](04_camera_relative_facing.md) ｜ [目次へ](../README.md) ｜ **次のページ:** [06. 拡張・NPC化・テスト](06_extensions_npc_and_tests.md)

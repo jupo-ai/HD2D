@@ -1,6 +1,6 @@
 # 03. 入力IntentとMotor
 
-[前章：プロジェクトとPlayerシーンの準備](02_project_and_scene_setup.md) ｜ [目次へ](../README.md) ｜ [次章：カメラ基準のFacing](04_camera_relative_facing.md)
+[前章：プロジェクトとPlayerシーンの準備](02_project_and_scene_setup.md) ｜ [目次へ](../README.md) ｜ [次章：カメラ基準のFacingと方向別アニメーション](04_camera_relative_facing.md)
 
 ## この章で分けるもの
 
@@ -288,7 +288,7 @@ func _physics_process(delta: float) -> void:
 
 - Stateから`body.move_and_slide()`を直接呼ぶ。
 - PlayerとMotorの両方から`move_and_slide()`を呼ぶ。
-- VisualやFacingからvelocityを書き換える。
+- DirectionalSpriteAnimatorやFacingからvelocityを書き換える。
 - 目標速度へdeltaを掛ける。
 
 `max_speed`は毎秒の速度です。deltaを掛けるのは、加速度、減速度、重力を積算するときです。
@@ -324,4 +324,4 @@ Stateを作る前でも、デバッガや一時的な観測コードで次を確
 
 ---
 
-[前章：プロジェクトとPlayerシーンの準備](02_project_and_scene_setup.md) ｜ [目次へ](../README.md) ｜ **次のページ:** [04. カメラ基準のFacing](04_camera_relative_facing.md)
+[前章：プロジェクトとPlayerシーンの準備](02_project_and_scene_setup.md) ｜ [目次へ](../README.md) ｜ **次のページ:** [04. カメラ基準のFacingと方向別アニメーション](04_camera_relative_facing.md)

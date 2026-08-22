@@ -5,25 +5,25 @@
 [StateMachine設計・実装ガイド](../StateMachine/README.md)のNode型FSM、依存性注入、Intent・State・Motorの分離を前提にしながら、次の要件を具体的なシーン構成とGDScriptへ落とし込みます。
 
 - ロコモーションはIdle、Walk、Runから始める。
-- 衣服はOutdoor、Indoor、Nakedから始める。
+- PlayerのAnimatedSprite3Dには、1つのSpriteFramesをInspectorで設定する。
 - Playerのワールド上の向きを、現在のCamera3Dから見た上下左右へ変換して表示する。
 - カメラが回転しただけでも、`idle_up`、`idle_down`などを正しく選び直す。
-- Dash、Jump、Swimsuitを既存コードの分岐追加ではなく、StateやResourceの追加で拡張できるようにする。
-- Player固有の入力だけを交換し、Motor、Facing、Visual、ロコモーションStateをNPCでも再利用できるようにする。
+- DashやJumpを、既存コードの大規模な分岐追加ではなくStateの追加で拡張できるようにする。
+- Player固有の入力だけを交換し、Motor、Facing、方向別Animator、ロコモーションStateをNPCでも再利用できるようにする。
 
 > [!IMPORTANT]
 > このフォルダにあるのは実装仕様書です。この作業ではPlayerシーンやGDScript本体は作成しません。実装時は各章の順番でファイルとNodeを作成してください。
 
 ## 採用する設計
 
-Playerの「移動状態」と「衣服状態」は、同じStateMachineへ入れません。Walk中にもOutdoorでいられるように、両者は独立した状態軸だからです。
+初期実装でStateMachineが管理するのは、Idle、Walk、Runという排他的なロコモーションだけです。表示方向と再生アニメーションはロコモーションStateから派生する表示情報であり、別のStateMachineにはしません。
 
-| 状態軸 | 実装 | 初期要素 | 追加方法 |
+| 要素 | 実装 | 初期要素 | 追加方法 |
 |---|---|---|---|
 | ロコモーション | Node型StateMachine | Idle、Walk、Run | DashStateやJumpStateを追加する |
-| 衣服 | CharacterVisual3Dが保持するOutfit Resource | Outdoor、Indoor、Naked | Swimsuit用Resourceを登録する |
 | ワールド上の向き | CameraRelativeFacing3D | 最後に移動した水平ベクトル | PlayerとNPCの移動意図から更新する |
 | 画面上の向き | CameraRelativeFacing3DがCamera3D基準で算出 | Down、Left、Right、Up | 8方向化する場合だけ判定を拡張する |
+| 方向別アニメーション | DirectionalSpriteAnimator3D | `idle_*`、`walk_*`、`run_*` | Stateの論理名と向きから選択する |
 
 ~~~mermaid
 flowchart LR
@@ -33,10 +33,11 @@ flowchart LR
     AiIntent --> Locomotion
     Locomotion --> Motor[CharacterMotor3D]
     Locomotion --> Facing[CameraRelativeFacing3D]
+    Locomotion --> Animator[DirectionalSpriteAnimator3D]
     Motor --> Body[CharacterBody3D]
-    Facing --> Visual[CharacterVisual3D]
-    Outfit[CharacterOutfit Resource] --> Visual
-    Visual --> Sprite[AnimatedSprite3D]
+    Facing --> Animator
+    Animator --> Sprite[AnimatedSprite3D]
+    Frames[Single SpriteFrames] --> Sprite
 ~~~
 
 ## 実装する順番
@@ -48,10 +49,9 @@ flowchart LR
 | 1 | [01. 全体設計と責務](pages/01_architecture_and_responsibilities.md) | 状態軸、所有権、Scene Treeを説明できる |
 | 2 | [02. プロジェクトとPlayerシーンの準備](pages/02_project_and_scene_setup.md) | Input Map、フォルダ、空のNode構成が決まる |
 | 3 | [03. 入力IntentとMotor](pages/03_movement_intent_and_motor.md) | カメラ相対入力をワールド方向へ変換し、Motorを1回だけ実行できる |
-| 4 | [04. カメラ基準のFacing](pages/04_camera_relative_facing.md) | カメラ回転を含めて上下左右を判定できる |
-| 5 | [05. 衣服とVisual](pages/05_outfit_and_visual.md) | SpriteFrames切替、再生位置継承、フォールバックが動く |
-| 6 | [06. Idle・Walk・RunとPlayer本体](pages/06_locomotion_and_player.md) | FSM、全コンポーネント、Playerの更新順がつながる |
-| 7 | [07. 拡張・NPC化・テスト](pages/07_extensions_npc_and_tests.md) | Dash、Jump、Swimsuit、NPCへ安全に拡張できる |
+| 4 | [04. カメラ基準のFacingと方向別アニメーション](pages/04_camera_relative_facing.md) | カメラ回転を含めて上下左右を判定し、単一SpriteFramesから適切なアニメーションを選べる |
+| 5 | [05. Idle・Walk・RunとPlayer本体](pages/05_locomotion_and_player.md) | FSM、全コンポーネント、Playerの更新順がつながる |
+| 6 | [06. 拡張・NPC化・テスト](pages/06_extensions_npc_and_tests.md) | Dash、Jump、NPCへ安全に拡張できる |
 
 ## 完成時のScene Tree
 
@@ -62,14 +62,14 @@ Player (CharacterBody3D) [player.gd]
 ├── PlayerMovementIntent (Node)
 ├── CharacterMotor3D (Node)
 ├── CameraRelativeFacing3D (Node)
-├── CharacterVisual3D (Node)
+├── DirectionalSpriteAnimator3D (Node)
 └── LocomotionStateMachine (Node)
     ├── Idle (Node)
     ├── Walk (Node)
     └── Run (Node)
 ~~~
 
-AnimatedSprite3Dは表示だけを担当します。衣服の選択、論理アニメーション名、画面上の向き、実際に再生するアニメーション名の解決はCharacterVisual3Dへ置きます。
+AnimatedSprite3Dの`Sprite Frames`には、Player用のSpriteFramesを1つだけ設定します。初期設計では実行中に別のSpriteFramesへ切り替えません。DirectionalSpriteAnimator3Dは、論理アニメーション名と画面上の向きから`walk_left`などの実アニメーション名を選ぶだけです。
 
 ## 基準環境
 

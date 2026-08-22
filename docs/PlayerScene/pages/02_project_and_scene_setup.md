@@ -52,7 +52,6 @@ res://entities/character/shared/state_machine/
 res://entities/character/shared/movement/
 res://entities/character/shared/locomotion/
 res://entities/character/shared/visual/
-res://entities/character/player/outfits/
 res://entities/character/npc/
 ~~~
 
@@ -63,13 +62,12 @@ res://entities/character/npc/
 3. `player_movement_intent.gd`
 4. `character_motor_3d.gd`
 5. `camera_relative_facing_3d.gd`
-6. `character_outfit.gd`
-7. `character_visual_3d.gd`
-8. `locomotion_state.gd`
-9. `character_idle_state.gd`
-10. `character_walk_state.gd`
-11. `character_run_state.gd`
-12. `player.gd`
+6. `directional_sprite_animator_3d.gd`
+7. `locomotion_state.gd`
+8. `character_idle_state.gd`
+9. `character_walk_state.gd`
+10. `character_run_state.gd`
+11. `player.gd`
 
 基底クラスから具体クラスの順に作ると、`class_name`が未認識のために発生する一時的なParse Errorを減らせます。
 
@@ -104,7 +102,7 @@ StateMachine基盤はPlayer専用にしません。NPC、敵、ギミックに�
 | 3 | Node | PlayerMovementIntent | PlayerMovementIntent |
 | 4 | Node | CharacterMotor3D | CharacterMotor3D |
 | 5 | Node | CameraRelativeFacing3D | CameraRelativeFacing3D |
-| 6 | Node | CharacterVisual3D | CharacterVisual3D |
+| 6 | Node | DirectionalSpriteAnimator3D | DirectionalSpriteAnimator3D |
 | 7 | Node | LocomotionStateMachine | StateMachine |
 | 8 | Node | Idle | CharacterIdleState |
 | 9 | Node | Walk | CharacterWalkState |
@@ -127,7 +125,7 @@ CharacterBody3Dの`Motion Mode`は、重力と床判定を使うなら`Grounded`
 
 | Inspector項目 | 初期方針 |
 |---|---|
-| Sprite Frames | 第5章で衣服Resourceから設定するため、仮Resourceでもよい |
+| Sprite Frames | Player用のSpriteFramesを1つ設定する |
 | Billboard | Enabled |
 | Pixel Size | 既存アートの解像度とワールド寸法に合わせる |
 | Shaded | HD-2Dのライティング方針に合わせる |
@@ -135,6 +133,16 @@ CharacterBody3Dの`Motion Mode`は、重力と床判定を使うなら`Grounded`
 | Position | 足元がPlayer原点へ合うようYを調整する |
 
 Billboardを有効にしてSprite面をカメラへ向けることと、`idle_up`や`idle_down`を選ぶことは別問題です。Billboardは板ポリゴンの向きを変えます。CameraRelativeFacing3Dは、キャラクターのワールド上の向きがカメラからどう見えるかを判断します。
+
+設定したSpriteFramesには、最初に次の12アニメーションを用意します。
+
+| 論理動作 | アニメーション名 |
+|---|---|
+| Idle | `idle_down`、`idle_left`、`idle_right`、`idle_up` |
+| Walk | `walk_down`、`walk_left`、`walk_right`、`walk_up` |
+| Run | `run_down`、`run_left`、`run_right`、`run_up` |
+
+初期実装では、このSpriteFramesを実行中に差し替えず、別のSpriteFramesを管理するResourceやIDも用意しません。
 
 ## 7. Camera3Dの前提
 
@@ -156,10 +164,9 @@ get_viewport().get_camera_3d()
 |---|---|---|
 | CharacterMotor3D | body | Player |
 | CameraRelativeFacing3D | camera_override | 通常は未設定 |
-| CharacterVisual3D | sprite | AnimatedSprite3D |
-| CharacterVisual3D | facing | CameraRelativeFacing3D |
-| CharacterVisual3D | outfits | Outdoor、Indoor、NakedのResource |
-| CharacterVisual3D | initial_outfit | `outdoor` |
+| DirectionalSpriteAnimator3D | sprite | AnimatedSprite3D |
+| DirectionalSpriteAnimator3D | facing | CameraRelativeFacing3D |
+| DirectionalSpriteAnimator3D | fallback_animation | `idle_down` |
 | LocomotionStateMachine | initial_state | Idle |
 | Idle | walk_state | Walk |
 | Walk | idle_state | Idle |
@@ -171,7 +178,9 @@ get_viewport().get_camera_3d()
 
 - [ ] PlayerルートがCharacterBody3Dである。
 - [ ] Idle、Walk、RunだけがLocomotionStateMachine直下にある。
-- [ ] Motor、Facing、Visual、IntentはPlayer直下にある。
+- [ ] Motor、Facing、DirectionalSpriteAnimator、IntentはPlayer直下にある。
+- [ ] AnimatedSprite3DへPlayer用SpriteFramesを1つ設定した。
+- [ ] SpriteFramesにIdle、Walk、Runの4方向アニメーションがある。
 - [ ] Input Action名がコードの既定値と一致している。
 - [ ] currentなCamera3Dを含むテスト用Worldを用意できる。
 - [ ] 旧Playerを削除する前に、参照検索と復元手段を確認した。

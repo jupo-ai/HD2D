@@ -1,6 +1,6 @@
-# 04. カメラ基準のFacing
+# 04. カメラ基準のFacingと方向別アニメーション
 
-[前章：入力IntentとMotor](03_movement_intent_and_motor.md) ｜ [目次へ](../README.md) ｜ [次章：衣服とVisual](05_outfit_and_visual.md)
+[前章：入力IntentとMotor](03_movement_intent_and_motor.md) ｜ [目次へ](../README.md) ｜ [次章：Idle・Walk・RunとPlayer本体](05_locomotion_and_player.md)
 
 ## 解決する問題
 
@@ -88,7 +88,7 @@ func get_screen_facing() -> int:
     return _screen_facing
 
 
-## Camera回転だけでも結果が変わり得るため、Visual更新時に呼ぶ。
+## Camera回転だけでも結果が変わり得るため、表示更新時に呼ぶ。
 func refresh() -> bool:
     var next_facing: int = _calculate_screen_facing()
     if next_facing == _screen_facing:
@@ -188,17 +188,182 @@ func command_motion(
 
 world_facingが変わらなくても、Camera3Dが回ればscreen_facingは変わります。そのため、移動したときだけ`refresh()`を呼ぶ設計では不足します。
 
-Playerの`_process()`からCharacterVisual3Dの`refresh()`を呼び、その中でFacingも更新します。
+Playerの`_process()`からDirectionalSpriteAnimator3Dの`refresh()`を呼び、その中でFacingも更新します。
 
 ~~~gdscript
 func _process(delta: float) -> void:
     locomotion.update(delta)
-    visual.refresh()
+    directional_animator.refresh()
 ~~~
 
 これにより、Playerが+Zを向いたままIdle中でも、カメラがPlayerの背面側から正面側へ回り込めば、`idle_up`から`idle_down`へ切り替わります。
 
-## 4. 具体例
+## 4. DirectionalSpriteAnimator3Dを作る
+
+AnimatedSprite3Dには、Player用のSpriteFramesをInspectorで1つだけ設定します。DirectionalSpriteAnimator3DはSpriteFramesを所有・交換せず、論理動作と画面上の向きから、同じSpriteFrames内のアニメーション名を選びます。
+
+作成先:
+
+~~~text
+res://entities/character/shared/visual/directional_sprite_animator_3d.gd
+~~~
+
+~~~gdscript
+class_name DirectionalSpriteAnimator3D
+extends Node
+
+@export var sprite: AnimatedSprite3D
+@export var facing: CameraRelativeFacing3D
+@export var fallback_animation: StringName = &"idle_down"
+
+var _logical_animation: StringName = &"idle"
+
+
+func initialize() -> void:
+    assert(
+        sprite != null,
+        "DirectionalSpriteAnimator3D.spriteが未設定です"
+    )
+    assert(
+        facing != null,
+        "DirectionalSpriteAnimator3D.facingが未設定です"
+    )
+    if sprite == null or facing == null:
+        return
+
+    assert(
+        sprite.sprite_frames != null,
+        "AnimatedSprite3D.sprite_framesが未設定です"
+    )
+    if sprite.sprite_frames == null:
+        return
+
+    facing.initialize()
+    _refresh_animation(false)
+
+
+func set_logical_animation(
+    logical_animation: StringName
+) -> void:
+    if logical_animation == _logical_animation:
+        return
+
+    _logical_animation = logical_animation
+    _refresh_animation(false)
+
+
+## Camera回転だけでも方向が変わり得るため、毎描画フレーム呼ぶ。
+func refresh() -> void:
+    if facing.refresh():
+        _refresh_animation(true)
+
+
+func _refresh_animation(
+    preserve_directional_position: bool
+) -> void:
+    var frames: SpriteFrames = sprite.sprite_frames
+    if frames == null:
+        return
+
+    var target_animation: StringName = _resolve_animation()
+    if target_animation == &"":
+        sprite.stop()
+        return
+
+    if target_animation == sprite.animation:
+        if not sprite.is_playing():
+            sprite.play(target_animation)
+        return
+
+    var normalized_position: float = 0.0
+    var was_playing: bool = sprite.is_playing()
+
+    if (
+        preserve_directional_position
+        and frames.has_animation(sprite.animation)
+    ):
+        var previous_count: int = frames.get_frame_count(
+            sprite.animation
+        )
+        if previous_count > 0:
+            normalized_position = (
+                float(sprite.frame)
+                + sprite.frame_progress
+            ) / float(previous_count)
+
+    sprite.play(target_animation)
+
+    if preserve_directional_position:
+        var target_count: int = frames.get_frame_count(
+            target_animation
+        )
+        if target_count > 0:
+            var target_position: float = (
+                clampf(normalized_position, 0.0, 0.999999)
+                * float(target_count)
+            )
+            var target_frame: int = floori(target_position)
+            sprite.set_frame_and_progress(
+                target_frame,
+                target_position - float(target_frame)
+            )
+
+        if not was_playing:
+            sprite.pause()
+
+
+func _resolve_animation() -> StringName:
+    var frames: SpriteFrames = sprite.sprite_frames
+    if frames == null:
+        return &""
+
+    var suffix: StringName = facing.get_animation_suffix()
+    var desired_animation: StringName = StringName(
+        "%s_%s" % [_logical_animation, suffix]
+    )
+    if frames.has_animation(desired_animation):
+        return desired_animation
+
+    var idle_same_direction: StringName = StringName(
+        "idle_%s" % suffix
+    )
+    if frames.has_animation(idle_same_direction):
+        return idle_same_direction
+
+    if frames.has_animation(fallback_animation):
+        return fallback_animation
+
+    var animation_names: PackedStringArray = (
+        frames.get_animation_names()
+    )
+    if not animation_names.is_empty():
+        return StringName(animation_names[0])
+
+    push_error(
+        "AnimatedSprite3DのSpriteFramesに"
+        + "再生可能なアニメーションがありません"
+    )
+    return &""
+~~~
+
+`set_logical_animation(&"walk")`とFacingの`left`から`walk_left`が選ばれます。論理動作がIdleからWalkへ変わる場合は先頭から再生し、カメラ回転などで方向だけが変わる場合はアニメーションのおおよその再生位置を引き継ぎます。
+
+この簡易的な位置継承は、同じ論理動作の4方向アニメーションでフレーム数、FPS、ループ設定、足運びの位相を揃える前提です。方向ごとにタイミングが異なる素材へ対応する必要が生じたときだけ、各フレームのdurationを使う厳密な変換へ拡張します。
+
+不足したアニメーションは、同方向のIdle、`fallback_animation`、SpriteFrames内の先頭アニメーションの順に解決します。これはDashなどの素材を段階的に追加するための開発時フォールバックであり、初期のIdle、Walk、Runでは12個すべてを用意します。
+
+### Inspector設定
+
+| Node | プロパティ | 値 |
+|---|---|---|
+| AnimatedSprite3D | Sprite Frames | Player用SpriteFramesを1つ |
+| DirectionalSpriteAnimator3D | sprite | AnimatedSprite3D |
+| DirectionalSpriteAnimator3D | facing | CameraRelativeFacing3D |
+| DirectionalSpriteAnimator3D | fallback_animation | `idle_down` |
+
+DirectionalSpriteAnimator3Dには`sprite.sprite_frames = ...`という代入を実装しません。SpriteFramesの参照はシーンのInspector設定を唯一の入口とします。
+
+## 5. 具体例
 
 Cameraがワールド+Z側からPlayerを見ており、画面上方向がワールド-Zへ対応しているとします。
 
@@ -211,7 +376,7 @@ Cameraがワールド+Z側からPlayerを見ており、画面上方向がワー
 
 カメラを180度回転すると、world_facingを変更していなくてもUPとDOWNが反転します。
 
-## 5. 斜め方向の扱い
+## 6. 斜め方向の扱い
 
 初期実装は、内積の絶対値が大きい軸を選ぶ4方向判定です。45度付近では小さな入力変化により上下と左右が頻繁に切り替わる可能性があります。
 
@@ -223,16 +388,16 @@ Cameraがワールド+Z側からPlayerを見ており、画面上方向がワー
 
 アニメーション素材が4方向しかない段階で、角度を細かく保持しても表示上の方向は増えません。最初は単純な支配軸判定で十分です。
 
-## 6. PlayerとNPCで共有できる理由
+## 7. PlayerとNPCで共有できる理由
 
 PlayerとNPCでworld_facingの入力元は異なります。
 
 - Playerはカメラ相対入力から作ったワールド移動方向を使う。
 - NPCはNavigationAgent3Dの次の経路点へ向かうワールド方向を使う。
 
-しかし、どちらもFacingへ渡す時点ではワールドVector3です。CameraRelativeFacing3Dは入力元を知らず、現在のCamera3Dから見た表示方向だけを算出します。そのためNPCの方向別Spriteにも同じコンポーネントを使えます。
+しかし、どちらもFacingへ渡す時点ではワールドVector3です。CameraRelativeFacing3Dは入力元を知らず、現在のCamera3Dから見た表示方向だけを算出します。そのためNPCの方向別Spriteにも同じコンポーネントを使えます。NPC側のAnimatedSprite3DへNPC用のSpriteFramesを1つ設定すれば、DirectionalSpriteAnimator3Dもそのまま再利用できます。
 
-## 7. 確認項目
+## 8. 確認項目
 
 - [ ] Vector3.ZEROを渡しても最後のworld_facingが失われない。
 - [ ] Camera正面側へ向くとDOWNになる。
@@ -240,7 +405,10 @@ PlayerとNPCでworld_facingの入力元は異なります。
 - [ ] Cameraを90度回すとLEFTまたはRIGHTへ変化する。
 - [ ] Idle中のCamera回転だけでscreen_facingが変わる。
 - [ ] PlayerとNPCの両方がワールド方向を同じAPIへ渡せる。
+- [ ] AnimatedSprite3DへSpriteFramesが1つ設定されている。
+- [ ] Idle、Walk、Runの4方向アニメーションが選ばれる。
+- [ ] 実行中に`sprite_frames`を変更するコードがない。
 
 ---
 
-[前章：入力IntentとMotor](03_movement_intent_and_motor.md) ｜ [目次へ](../README.md) ｜ **次のページ:** [05. 衣服とVisual](05_outfit_and_visual.md)
+[前章：入力IntentとMotor](03_movement_intent_and_motor.md) ｜ [目次へ](../README.md) ｜ **次のページ:** [05. Idle・Walk・RunとPlayer本体](05_locomotion_and_player.md)

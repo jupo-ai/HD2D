@@ -1,16 +1,15 @@
-# 07. 拡張・NPC化・テスト
+# 06. 拡張・NPC化・テスト
 
-[前章：Idle・Walk・RunとPlayer本体](06_locomotion_and_player.md) ｜ [目次へ](../README.md)
+[前章：Idle・Walk・RunとPlayer本体](05_locomotion_and_player.md) ｜ [目次へ](../README.md)
 
 ## 拡張先を決める基準
 
-新しい要素を追加するときは、名前ではなく振る舞いの軸で置き場所を選びます。
+新しい要素を追加するときは、名前ではなく振る舞いの軸から置き場所を選びます。
 
 | 追加要素 | 置き場所 | 理由 |
 |---|---|---|
 | Dash | LocomotionStateMachine | 通常移動と排他的で、時間・固定方向・enterがある |
 | Jump、Fall | LocomotionStateMachine | 接地移動と排他的で、Y速度と着地遷移がある |
-| Swimsuit | CharacterOutfit Resource | 移動規則を変えず、見た目だけを交換する |
 | Attack | 別のActionStateMachine | WalkやRunと同時実行できる可能性がある |
 | Stun、Dead | Status FSMまたは優先割り込み | 通常入力より高い優先度で複数軸を止める |
 | NPC操作 | NavigationMovementIntent | StateとMotorはPlayerと同じ契約を使える |
@@ -96,9 +95,9 @@ if movement_intent.wants_dash():
 
 Dash中は通常入力で方向を変えず、enter時に確定したワールド方向を使います。クールダウンやスタミナを導入したら、`wants_dash()`とは別にAbilityコンポーネントで実行可否を確認します。
 
-### 4. Visual
+### 4. 方向別アニメーション
 
-全衣服へ`dash_down`、`dash_left`、`dash_right`、`dash_up`を追加し、DashStateの`logical_animation`を`dash`にします。素材がまだない場合はVisualのフォールバック規則により同方向Idleが表示されますが、開発中に警告を追加して不足を把握できるようにします。
+AnimatedSprite3Dへ設定した1つのSpriteFramesへ、`dash_down`、`dash_left`、`dash_right`、`dash_up`を追加し、DashStateの`logical_animation`を`dash`にします。素材がまだない場合はDirectionalSpriteAnimator3Dのフォールバック規則により同方向Idleが表示されますが、開発中に警告を追加して不足を把握できるようにします。
 
 ## JumpとFallを追加する
 
@@ -154,21 +153,6 @@ func physics_update(_delta: float) -> void:
 FallStateは空中移動を続け、`body.is_on_floor()`がtrueになったら入力に応じてIdle、Walk、Runへ戻します。CharacterMotor3Dは既存どおり重力と`move_and_slide()`を1回だけ担当します。
 
 `is_on_floor()`は直前の`move_and_slide()`結果です。この構成では着地したMotor実行の次の物理フレームにFallからGrounded Stateへ遷移します。その1フレーム差が問題になる場合だけ、Motorの移動後イベントを設計します。
-
-## Swimsuitを追加する
-
-Swimsuitが見た目だけの差であれば、Stateや条件分岐を追加しません。
-
-1. 共通命名規則でSwimsuit用SpriteFramesを作る。
-2. `swimsuit.tres`というCharacterOutfitを作る。
-3. `id`を`swimsuit`にする。
-4. SpriteFramesとfallback_animationを設定する。
-5. CharacterVisual3Dの`outfits`配列へ追加する。
-6. `player.set_outfit(&"swimsuit")`を呼ぶ。
-
-これだけでIdle、Walk、Run、将来のDashやJumpへ同じ解決規則が適用されます。
-
-もしSwimsuit装着中だけ泳げるというゲームルールを追加するなら、泳げる能力はVisualへ置きません。EquipmentまたはEnvironmentコンポーネントが`can_swim`を提供し、LocomotionStateMachineがSwimStateへの遷移可否を判断します。
 
 ## NPCへ再利用する
 
@@ -229,7 +213,7 @@ NPC (CharacterBody3D)
 ├── NavigationMovementIntent
 ├── CharacterMotor3D
 ├── CameraRelativeFacing3D
-├── CharacterVisual3D
+├── DirectionalSpriteAnimator3D
 └── LocomotionStateMachine
     ├── Idle
     ├── Walk
@@ -244,7 +228,7 @@ NPCでもCameraRelativeFacing3Dを使います。NPCの移動判断はカメラ�
 - LocomotionState、Idle、Walk、Run
 - CharacterMotor3D
 - CameraRelativeFacing3D
-- CharacterVisual3DとCharacterOutfit
+- DirectionalSpriteAnimator3D
 
 交換するもの:
 
@@ -268,18 +252,18 @@ world_facingを固定し、Camera3Dだけを回して確認します。
 
 少なくともCameraの方位0度、90度、180度、270度で、Idle、Walk、Runを確認します。
 
-## 衣服のテスト表
+## 方向別アニメーションのテスト表
 
-| 現在 | 操作 | 期待結果 |
+| 状態 | 操作 | 期待結果 |
 |---|---|---|
-| `walk_left`再生中 | OutdoorからIndoor | `walk_left`の相対位置を継承 |
-| `run_down`再生中 | Runがない試験用Outfitへ変更 | `idle_down`を先頭から再生 |
-| Idle | Camera回転 | 同じOutfitで方向だけ変更し、周期を継承 |
-| Run | Nakedへ変更 | Locomotion active_stateはRunのまま |
-| 任意 | 未登録IDを指定 | falseを返し、現在Outfitを維持 |
-| 任意 | 空SpriteFramesのOutfit | エラーを出し、現在Outfitを維持 |
+| Idle | Camera側を向く | `idle_down`を再生 |
+| Walk | 画面左へ向く | `walk_left`を再生 |
+| Run | Cameraだけを90度回す | 対応する`run_*`へ切り替え、ロコモーションStateはRunのまま |
+| Walk | 方向だけを変更 | 新しい`walk_*`へおおよその再生位置を継承 |
+| Dash | `dash_*`が未作成 | 同方向の`idle_*`へフォールバック |
+| 任意 | SpriteFramesが空 | エラーを出し、再生を停止 |
 
-フレーム数とframe durationが異なるSpriteFrames同士でもテストします。
+すべての操作で、AnimatedSprite3Dの`sprite_frames`参照が同じままであることも確認します。
 
 ## StateMachineのテスト表
 
@@ -291,8 +275,7 @@ world_facingを固定し、Camera3Dだけを回して確認します。
 | Run | runなし | Walk | 次の物理フレームからwalk_speed |
 | Run | 入力なし | Idle | Walkを経由しない |
 | 任意 | 同じStateを要求 | 変化なし | enter・exitを繰り返さない |
-| 任意 | Camera回転 | Stateは変わらない | Visual方向だけ変わる |
-| 任意 | Outfit変更 | Stateは変わらない | SpriteFramesだけ変わる |
+| 任意 | Camera回転 | Stateは変わらない | 再生する方向別アニメーションだけ変わる |
 
 ## 物理処理の不変条件
 
@@ -307,7 +290,7 @@ world_facingを固定し、Camera3Dだけを回して確認します。
 ## 旧Playerから切り替える最終手順
 
 1. 新Playerを専用テストMapで検証する。
-2. 入力、衝突、カメラ回転、3衣服を確認する。
+2. 入力、衝突、カメラ回転、Idle・Walk・Runの4方向表示を確認する。
 3. Main、Map、SpawnerのPackedScene参照を新Playerへ変更する。
 4. 旧PlayerのNodePath、script preload、型名、シグナル接続をプロジェクト全体で検索する。
 5. セーブデータがScene Pathを保持している場合は移行処理を用意する。
@@ -324,12 +307,11 @@ world_facingを固定し、Camera3Dだけを回して確認します。
 - Cameraから見た上下左右を決めるのはどこか。
 - `move_and_slide()`を呼ぶのはどこか。
 - Idle、Walk、Runを切り替えるのはどこか。
-- Outdoor、Indoor、Nakedを切り替えるのはどこか。
-- 衣服変更時に再生位置を継承する条件は何か。
-- 現在アニメーションが新しいSpriteFramesにない場合、何へフォールバックするか。
-- Swimsuitを追加するとき、既存GDScriptを変更せずに済むか。
+- Player用SpriteFramesを設定する場所はどこか。
+- 論理アニメーション名とCamera基準の向きから、実アニメーション名を決めるのはどこか。
+- Dash用アニメーションが未作成の場合、何へフォールバックするか。
 - NPC化するとき、どのコンポーネントだけを交換するか。
 
 ---
 
-[前章：Idle・Walk・RunとPlayer本体](06_locomotion_and_player.md) ｜ [目次へ](../README.md)
+[前章：Idle・Walk・RunとPlayer本体](05_locomotion_and_player.md) ｜ [目次へ](../README.md)
